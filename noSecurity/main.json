@@ -1,0 +1,306 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.4.1124.51302",
+      "templateHash": "15815260071560417017"
+    }
+  },
+  "variables": {
+    "location": "westeurope"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "no-security-rg",
+      "location": "[variables('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "vnets",
+      "resourceGroup": "no-security-rg",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "2156489837337494603"
+            }
+          },
+          "variables": {
+            "location": "[resourceGroup().location]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2021-05-01",
+              "name": "myvnet",
+              "location": "[variables('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.0.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "appsubnet",
+                    "properties": {
+                      "addressPrefix": "10.0.0.0/24"
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "outputs": {
+            "appsubnet": {
+              "type": "string",
+              "value": "[format('{0}/subnets/appsubnet', resourceId('Microsoft.Network/virtualNetworks', 'myvnet'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'no-security-rg')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "appWithLb",
+      "resourceGroup": "no-security-rg",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "subnet": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'no-security-rg'), 'Microsoft.Resources/deployments', 'vnets'), '2020-10-01').outputs.appsubnet.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "12795700831134694659"
+            }
+          },
+          "parameters": {
+            "subnet": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "location": "[resourceGroup().location]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2021-06-01",
+              "name": "[uniqueString(resourceGroup().id)]",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2"
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2021-05-01",
+              "name": "appnsg",
+              "location": "[variables('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "allowWeb",
+                    "properties": {
+                      "description": "Allow web traffic",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "80",
+                      "sourceAddressPrefix": "*",
+                      "destinationAddressPrefix": "*",
+                      "access": "Allow",
+                      "priority": 100,
+                      "direction": "Inbound"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2021-05-01",
+              "name": "appnic",
+              "location": "[variables('location')]",
+              "properties": {
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'appnsg')]"
+                },
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig",
+                    "properties": {
+                      "privateIPAddress": "10.0.0.10",
+                      "subnet": {
+                        "id": "[parameters('subnet')]"
+                      },
+                      "loadBalancerBackendAddressPools": [
+                        {
+                          "id": "[reference(resourceId('Microsoft.Network/loadBalancers', 'applb')).backendAddressPools[0].id]"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/loadBalancers', 'applb')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'appnsg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2021-05-01",
+              "name": "appip",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                  "domainNameLabel": "[format('tomas{0}', uniqueString(resourceGroup().id))]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/loadBalancers",
+              "apiVersion": "2021-05-01",
+              "name": "applb",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "frontendIPConfigurations": [
+                  {
+                    "name": "frontend",
+                    "properties": {
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'appip')]"
+                      }
+                    }
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "backend"
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "probe",
+                    "properties": {
+                      "port": 80,
+                      "protocol": "Http",
+                      "requestPath": "/"
+                    }
+                  }
+                ],
+                "loadBalancingRules": [
+                  {
+                    "name": "web",
+                    "properties": {
+                      "protocol": "Tcp",
+                      "frontendPort": 80,
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', 'applb', 'frontend')]"
+                      },
+                      "backendPort": 80,
+                      "backendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', 'applb', 'backend')]"
+                      },
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes', 'applb', 'probe')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', 'appip')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2021-07-01",
+              "name": "appvm1",
+              "location": "[variables('location')]",
+              "properties": {
+                "hardwareProfile": {
+                  "vmSize": "Standard_B1s"
+                },
+                "osProfile": {
+                  "adminUsername": "tomas",
+                  "adminPassword": "Azure12345678",
+                  "computerName": "appvm1",
+                  "customData": "[base64('#!/bin/bash\nsudo apt update && sudo apt install nginx -y')]",
+                  "linuxConfiguration": {
+                    "disablePasswordAuthentication": false
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'appnic')]"
+                    }
+                  ]
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "UbuntuServer",
+                    "sku": "18.04-LTS",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'appnic')]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'no-security-rg')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'no-security-rg'), 'Microsoft.Resources/deployments', 'vnets')]"
+      ]
+    }
+  ]
+}
