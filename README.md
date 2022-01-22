@@ -39,7 +39,7 @@ Inbound architecture:
 Public LB -> NVA -> Private LB of app via VNET peering -> VM with web application
 
 Outbound architecture:
-VM with web application -> Private LB of NVA via VNET peering -> NVA -> Outbound via Public LB
+VM with web application -> Private LB of NVA via VNET peering -> NVA -> Outbound via Public LB of NVA
 
 To deploy:
 
@@ -49,4 +49,25 @@ az bicep build -f main.bicep && az deployment sub create --template-file main.js
 ```
 
 ## GW LB based security
-TBD
+In this scenario NVA is chained to traffic with no need to participate in routing. Note from application perspective there is almost no difference compared to "no security" scenario:
+
+- There is Public LB in front of application as before, only one configuration is added (reference to gateway LB)
+- Rules on Public LB are as before
+- No need for VNET to be peered
+- No need for routing modification (no UDRs)
+- NVA VNET can be in different subscription, region or even tenant
+- NVA is not modifying packets (no routing or NAT needed)
+- Application VM see public source IP of client
+
+Inbound architecture:
+Public LB -> NVA -> Public LB -> VM with web application
+
+Outbound architecture:
+VM with web application -> Public LB -> NVA -> Outbound via Public LB(of application)
+
+To deploy:
+
+```
+cd gwlbSecurity
+az bicep build -f main.bicep && az deployment sub create --template-file main.json -l westeurope
+```

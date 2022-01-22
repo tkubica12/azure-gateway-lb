@@ -1,0 +1,643 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.4.1124.51302",
+      "templateHash": "6891023822902868949"
+    }
+  },
+  "variables": {
+    "location": "westeurope"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "gwlb-security-rg",
+      "location": "[variables('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "vnets",
+      "resourceGroup": "gwlb-security-rg",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "nvaLbIp": {
+            "value": "10.1.0.100"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "11806594223440063692"
+            }
+          },
+          "parameters": {
+            "nvaLbIp": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "location": "[resourceGroup().location]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2021-05-01",
+              "name": "myvnet",
+              "location": "[variables('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.0.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "appsubnet",
+                    "properties": {
+                      "addressPrefix": "10.0.0.0/24"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2021-05-01",
+              "name": "secvnet",
+              "location": "[variables('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "10.1.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "nvasubnet",
+                    "properties": {
+                      "addressPrefix": "10.1.0.0/24",
+                      "natGateway": {
+                        "id": "[resourceId('Microsoft.Network/natGateways', 'natgw')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/natGateways', 'natgw')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2021-05-01",
+              "name": "natip",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static"
+              }
+            },
+            {
+              "type": "Microsoft.Network/natGateways",
+              "apiVersion": "2021-05-01",
+              "name": "natgw",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIpAddresses": [
+                  {
+                    "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'natip')]"
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', 'natip')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "appsubnet": {
+              "type": "string",
+              "value": "[format('{0}/subnets/appsubnet', resourceId('Microsoft.Network/virtualNetworks', 'myvnet'))]"
+            },
+            "nvasubnet": {
+              "type": "string",
+              "value": "[format('{0}/subnets/nvasubnet', resourceId('Microsoft.Network/virtualNetworks', 'secvnet'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'gwlb-security-rg')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "appWithLb",
+      "resourceGroup": "gwlb-security-rg",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "subnet": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'gwlb-security-rg'), 'Microsoft.Resources/deployments', 'vnets'), '2020-10-01').outputs.appsubnet.value]"
+          },
+          "gwlbfrontid": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'gwlb-security-rg'), 'Microsoft.Resources/deployments', 'nva'), '2020-10-01').outputs.gwlbfrontid.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "2097722266520034965"
+            }
+          },
+          "parameters": {
+            "subnet": {
+              "type": "string"
+            },
+            "gwlbfrontid": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "location": "[resourceGroup().location]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2021-06-01",
+              "name": "[uniqueString(resourceGroup().id)]",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2"
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2021-05-01",
+              "name": "appnsg",
+              "location": "[variables('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "allowWeb",
+                    "properties": {
+                      "description": "Allow web traffic",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "80",
+                      "sourceAddressPrefix": "*",
+                      "destinationAddressPrefix": "*",
+                      "access": "Allow",
+                      "priority": 100,
+                      "direction": "Inbound"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2021-05-01",
+              "name": "appnic",
+              "location": "[variables('location')]",
+              "properties": {
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'appnsg')]"
+                },
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig",
+                    "properties": {
+                      "privateIPAddress": "10.0.0.10",
+                      "privateIPAllocationMethod": "Static",
+                      "subnet": {
+                        "id": "[parameters('subnet')]"
+                      },
+                      "loadBalancerBackendAddressPools": [
+                        {
+                          "id": "[reference(resourceId('Microsoft.Network/loadBalancers', 'applb')).backendAddressPools[0].id]"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/loadBalancers', 'applb')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'appnsg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2021-05-01",
+              "name": "appip",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                  "domainNameLabel": "[format('tomas{0}', uniqueString(resourceGroup().id))]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/loadBalancers",
+              "apiVersion": "2021-05-01",
+              "name": "applb",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "frontendIPConfigurations": [
+                  {
+                    "name": "frontend",
+                    "properties": {
+                      "gatewayLoadBalancer": {
+                        "id": "[parameters('gwlbfrontid')]"
+                      },
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'appip')]"
+                      }
+                    }
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "backend"
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "probe",
+                    "properties": {
+                      "port": 80,
+                      "protocol": "Http",
+                      "requestPath": "/"
+                    }
+                  }
+                ],
+                "loadBalancingRules": [
+                  {
+                    "name": "web",
+                    "properties": {
+                      "protocol": "Tcp",
+                      "frontendPort": 80,
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', 'applb', 'frontend')]"
+                      },
+                      "backendPort": 80,
+                      "backendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', 'applb', 'backend')]"
+                      },
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes', 'applb', 'probe')]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', 'appip')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2021-07-01",
+              "name": "appvm1",
+              "location": "[variables('location')]",
+              "properties": {
+                "diagnosticsProfile": {
+                  "bootDiagnostics": {
+                    "enabled": true,
+                    "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', uniqueString(resourceGroup().id))).primaryEndpoints.blob]"
+                  }
+                },
+                "hardwareProfile": {
+                  "vmSize": "Standard_B1s"
+                },
+                "osProfile": {
+                  "adminUsername": "tomas",
+                  "adminPassword": "Azure12345678",
+                  "computerName": "appvm1",
+                  "customData": "[base64('#!/bin/bash\nsudo apt update && sudo apt install nginx -y')]",
+                  "linuxConfiguration": {
+                    "disablePasswordAuthentication": false
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'appnic')]"
+                    }
+                  ]
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "UbuntuServer",
+                    "sku": "18.04-LTS",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', 'appnic')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', uniqueString(resourceGroup().id))]"
+              ]
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'gwlb-security-rg')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'gwlb-security-rg'), 'Microsoft.Resources/deployments', 'nva')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'gwlb-security-rg'), 'Microsoft.Resources/deployments', 'vnets')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "nva",
+      "resourceGroup": "gwlb-security-rg",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "nvaLbIp": {
+            "value": "10.1.0.100"
+          },
+          "subnet": {
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'gwlb-security-rg'), 'Microsoft.Resources/deployments', 'vnets'), '2020-10-01').outputs.nvasubnet.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.4.1124.51302",
+              "templateHash": "9483671858075447875"
+            }
+          },
+          "parameters": {
+            "nvaLbIp": {
+              "type": "string"
+            },
+            "subnet": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "location": "westeurope",
+            "script": "#!/bin/bash\r\n\r\n# Install bridge support\r\nsudo apt update\r\nsudo apt install bridge-utils -y\r\n\r\n# Create VXLAN interfaces\r\nsudo ip link add vxlan0 type vxlan id 900 dev eth0 dstport 10800 remote 10.1.0.100\r\nsudo ip link set vxlan0 up\r\nsudo ip link add vxlan1 type vxlan id 901 dev eth0 dstport 10801 remote 10.1.0.100\r\nsudo ip link set vxlan1 up\r\n\r\n# Create bridge\r\nsudo brctl addbr br0\r\nsudo brctl addif br0 vxlan0\r\nsudo brctl addif br0 vxlan1\r\nsudo ip link set br0 up\r\n"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2021-06-01",
+              "name": "[format('nva{0}', uniqueString(resourceGroup().id))]",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2"
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2021-05-01",
+              "name": "nvansg",
+              "location": "[variables('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "allowAll",
+                    "properties": {
+                      "description": "Allow all",
+                      "protocol": "*",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "*",
+                      "sourceAddressPrefix": "*",
+                      "destinationAddressPrefix": "*",
+                      "access": "Allow",
+                      "priority": 100,
+                      "direction": "Inbound"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkInterfaces",
+              "apiVersion": "2021-05-01",
+              "name": "nvanic",
+              "location": "[variables('location')]",
+              "properties": {
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'nvansg')]"
+                },
+                "enableIPForwarding": true,
+                "ipConfigurations": [
+                  {
+                    "name": "ipconfig",
+                    "properties": {
+                      "privateIPAddress": "10.1.0.10",
+                      "privateIPAllocationMethod": "Static",
+                      "subnet": {
+                        "id": "[parameters('subnet')]"
+                      },
+                      "loadBalancerBackendAddressPools": [
+                        {
+                          "id": "[reference(resourceId('Microsoft.Network/loadBalancers', 'intlb')).backendAddressPools[0].id]"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/loadBalancers', 'intlb')]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', 'nvansg')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/loadBalancers",
+              "apiVersion": "2021-05-01",
+              "name": "intlb",
+              "location": "[variables('location')]",
+              "sku": {
+                "name": "Gateway",
+                "tier": "Regional"
+              },
+              "properties": {
+                "frontendIPConfigurations": [
+                  {
+                    "name": "frontend",
+                    "properties": {
+                      "privateIPAllocationMethod": "Static",
+                      "privateIPAddress": "[parameters('nvaLbIp')]",
+                      "subnet": {
+                        "id": "[parameters('subnet')]"
+                      }
+                    }
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "backend",
+                    "properties": {
+                      "tunnelInterfaces": [
+                        {
+                          "type": "Internal",
+                          "identifier": 900,
+                          "port": 10800,
+                          "protocol": "VXLAN"
+                        },
+                        {
+                          "type": "External",
+                          "identifier": 901,
+                          "port": 10801,
+                          "protocol": "VXLAN"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "probe",
+                    "properties": {
+                      "port": 22,
+                      "protocol": "Tcp"
+                    }
+                  }
+                ],
+                "loadBalancingRules": [
+                  {
+                    "name": "all",
+                    "properties": {
+                      "protocol": "All",
+                      "frontendPort": 0,
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations', 'intlb', 'frontend')]"
+                      },
+                      "backendPort": 0,
+                      "backendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools', 'intlb', 'backend')]"
+                      },
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes', 'intlb', 'probe')]"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachines",
+              "apiVersion": "2021-07-01",
+              "name": "nva1",
+              "location": "[variables('location')]",
+              "properties": {
+                "diagnosticsProfile": {
+                  "bootDiagnostics": {
+                    "enabled": true,
+                    "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', format('nva{0}', uniqueString(resourceGroup().id)))).primaryEndpoints.blob]"
+                  }
+                },
+                "hardwareProfile": {
+                  "vmSize": "Standard_B1s"
+                },
+                "osProfile": {
+                  "adminUsername": "tomas",
+                  "adminPassword": "Azure12345678",
+                  "computerName": "nva",
+                  "customData": "[base64(variables('script'))]",
+                  "linuxConfiguration": {
+                    "disablePasswordAuthentication": false
+                  }
+                },
+                "networkProfile": {
+                  "networkInterfaces": [
+                    {
+                      "id": "[resourceId('Microsoft.Network/networkInterfaces', 'nvanic')]"
+                    }
+                  ]
+                },
+                "storageProfile": {
+                  "imageReference": {
+                    "publisher": "Canonical",
+                    "offer": "UbuntuServer",
+                    "sku": "18.04-LTS",
+                    "version": "latest"
+                  },
+                  "osDisk": {
+                    "createOption": "FromImage",
+                    "managedDisk": {
+                      "storageAccountType": "Standard_LRS"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', format('nva{0}', uniqueString(resourceGroup().id)))]",
+                "[resourceId('Microsoft.Network/networkInterfaces', 'nvanic')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "gwlbfrontid": {
+              "type": "string",
+              "value": "[format('{0}/frontendIPConfigurations/frontend', resourceId('Microsoft.Network/loadBalancers', 'intlb'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'gwlb-security-rg')]",
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, 'gwlb-security-rg'), 'Microsoft.Resources/deployments', 'vnets')]"
+      ]
+    }
+  ]
+}
