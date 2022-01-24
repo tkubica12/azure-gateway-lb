@@ -132,6 +132,7 @@ resource applb 'Microsoft.Network/loadBalancers@2021-05-01' = {
         }
       }
     ]
+  }
 }
 
 resource appvm 'Microsoft.Compute/virtualMachines@2021-07-01' = {
